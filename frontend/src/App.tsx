@@ -5,6 +5,7 @@ import {
   Cpu,
   Gauge,
   Image as ImageIcon,
+  Info,
   Layers,
   Loader2,
   Play,
@@ -96,6 +97,27 @@ const defaultForm: FormState = {
   modelProfile: "sana-video-2b-480p",
   memoryMode: "low",
   unloadAfter: true,
+};
+
+const sectionTips = {
+  prompt: "Write the scene and motion direction. Add a start image when you want the first segment to begin from a specific frame.",
+  controls: "Tune quality, length, memory behavior, and chained generation before sending the job to the local backend.",
+  output: "Shows the selected MP4. Chained jobs are exported as one combined video.",
+  status: "Tracks queued and running jobs, segment progress, elapsed time, and peak PyTorch VRAM.",
+  gallery: "Loads the generated MP4 files from the backend outputs folder for quick replay.",
+};
+
+const controlTips = {
+  motion: "Higher values ask for stronger movement. Keep this lower for steadier chained clips.",
+  steps: "More diffusion steps can improve detail, but each step adds runtime and heat.",
+  frames: "Frames per generated segment. More frames make each segment longer and heavier on VRAM.",
+  segments: "Runs multiple short clips in sequence and feeds the last frame into the next segment.",
+  guidance: "Higher guidance follows the prompt more strongly. Too high can look stiff or distorted.",
+  fps: "Playback speed for the MP4. Lower FPS makes the same frames last longer.",
+  seed: "Use the same seed to make runs more repeatable. Change it to explore a different variation.",
+  model: "Pick the local model profile to run. Unsupported profiles need an adapter before they can generate.",
+  memory: "Low VRAM unloads and clears more aggressively. Balanced keeps more resident for speed.",
+  unload: "Frees model memory after each run, useful on a 12 GB laptop GPU.",
 };
 
 function toAssetUrl(url: string | null) {
@@ -286,10 +308,7 @@ export default function App() {
 
       <section className="workspace-grid">
         <form className="panel compose-panel" onSubmit={submit}>
-          <div className="panel-title">
-            <Sparkles size={18} />
-            Prompt
-          </div>
+          <PanelTitle icon={<Sparkles size={18} />} label="Prompt" tip={sectionTips.prompt} />
           <textarea
             value={form.prompt}
             onChange={(event) => update("prompt", event.target.value)}
@@ -328,19 +347,19 @@ export default function App() {
         </form>
 
         <aside className="panel controls-panel">
-          <div className="panel-title">
-            <Gauge size={18} />
-            Controls
-          </div>
-          <Control label="Motion" value={form.motionScore} min={1} max={100} step={1} onChange={(value) => update("motionScore", value)} />
-          <Control label="Steps" value={form.steps} min={4} max={30} step={1} onChange={(value) => update("steps", value)} />
-          <Control label="Frames" value={form.frames} min={9} max={49} step={8} onChange={(value) => update("frames", value)} />
-          <Control label="Segments" value={form.segments} min={1} max={8} step={1} onChange={(value) => update("segments", value)} />
-          <Control label="Guidance" value={form.guidance} min={1} max={10} step={0.25} onChange={(value) => update("guidance", value)} />
-          <Control label="FPS" value={form.fps} min={8} max={24} step={1} onChange={(value) => update("fps", value)} />
+          <PanelTitle icon={<Gauge size={18} />} label="Controls" tip={sectionTips.controls} />
+          <Control label="Motion" tip={controlTips.motion} value={form.motionScore} min={1} max={100} step={1} onChange={(value) => update("motionScore", value)} />
+          <Control label="Steps" tip={controlTips.steps} value={form.steps} min={4} max={30} step={1} onChange={(value) => update("steps", value)} />
+          <Control label="Frames" tip={controlTips.frames} value={form.frames} min={9} max={49} step={8} onChange={(value) => update("frames", value)} />
+          <Control label="Segments" tip={controlTips.segments} value={form.segments} min={1} max={8} step={1} onChange={(value) => update("segments", value)} />
+          <Control label="Guidance" tip={controlTips.guidance} value={form.guidance} min={1} max={10} step={0.25} onChange={(value) => update("guidance", value)} />
+          <Control label="FPS" tip={controlTips.fps} value={form.fps} min={8} max={24} step={1} onChange={(value) => update("fps", value)} />
 
           <label className="field-label">
-            Seed
+            <span className="field-title">
+              Seed
+              <Tooltip label={controlTips.seed} />
+            </span>
             <input
               type="number"
               value={form.seed}
@@ -349,7 +368,10 @@ export default function App() {
           </label>
 
           <label className="field-label">
-            Model
+            <span className="field-title">
+              Model
+              <Tooltip label={controlTips.model} />
+            </span>
             <select value={form.modelProfile} onChange={(event) => update("modelProfile", event.target.value)}>
               {modelProfiles.length === 0 && <option value={form.modelProfile}>Default model</option>}
               {modelProfiles.map((profile) => (
@@ -372,7 +394,10 @@ export default function App() {
           )}
 
           <label className="field-label">
-            Memory mode
+            <span className="field-title">
+              Memory mode
+              <Tooltip label={controlTips.memory} />
+            </span>
             <select value={form.memoryMode} onChange={(event) => update("memoryMode", event.target.value as FormState["memoryMode"])}>
               <option value="low">Low VRAM</option>
               <option value="balanced">Balanced</option>
@@ -385,7 +410,10 @@ export default function App() {
               checked={form.unloadAfter}
               onChange={(event) => update("unloadAfter", event.target.checked)}
             />
-            Unload after generation
+            <span className="check-label">
+              Unload after generation
+              <Tooltip label={controlTips.unload} />
+            </span>
           </label>
 
           <div className="run-profile">
@@ -395,10 +423,7 @@ export default function App() {
         </aside>
 
         <section className="panel output-panel">
-          <div className="panel-title">
-            <Video size={18} />
-            Output
-          </div>
+          <PanelTitle icon={<Video size={18} />} label="Output" tip={sectionTips.output} />
           {activeOutputUrl ? (
             <video src={activeOutputUrl} controls loop />
           ) : (
@@ -407,10 +432,7 @@ export default function App() {
         </section>
 
         <section className="panel progress-panel">
-          <div className="panel-title">
-            <Activity size={18} />
-            Run Status
-          </div>
+          <PanelTitle icon={<Activity size={18} />} label="Run Status" tip={sectionTips.status} />
           <div className="progress-head">
             <span>{job?.message ?? "Idle"}</span>
             <strong>{job ? `${Math.round(job.progress * 100)}%` : "0%"}</strong>
@@ -435,7 +457,7 @@ export default function App() {
         </section>
 
         <section className="panel gallery-panel">
-          <div className="panel-title">Recent Outputs</div>
+          <PanelTitle label="Recent Outputs" tip={sectionTips.gallery} />
           <div className="gallery-list">
             {outputs.map((output) => (
               <button key={output.name} type="button" onClick={() => setSelectedOutput(toAssetUrl(output.url))}>
@@ -451,11 +473,37 @@ export default function App() {
   );
 }
 
-function Control(props: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
+function PanelTitle(props: { icon?: ReactNode; label: string; tip: string }) {
+  return (
+    <div className="panel-title">
+      {props.icon}
+      <span>{props.label}</span>
+      <Tooltip label={props.tip} />
+    </div>
+  );
+}
+
+function Tooltip(props: { label: string }) {
+  return (
+    <span className="tooltip-wrap">
+      <button type="button" className="tooltip-trigger" aria-label={props.label}>
+        <Info size={13} />
+      </button>
+      <span className="tooltip-bubble" role="tooltip">
+        {props.label}
+      </span>
+    </span>
+  );
+}
+
+function Control(props: { label: string; tip?: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
   return (
     <label className="control">
       <span>
-        {props.label}
+        <span className="control-label">
+          {props.label}
+          {props.tip && <Tooltip label={props.tip} />}
+        </span>
         <strong>{props.value}</strong>
       </span>
       <input

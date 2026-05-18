@@ -138,6 +138,7 @@ h1 {
 }
 
 .panel-title {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -145,6 +146,65 @@ h1 {
   color: #fff8e6;
   font-size: 14px;
   font-weight: 800;
+}
+
+.panel-title .tooltip-wrap {
+  margin-left: auto;
+}
+
+.tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #344044;
+  border-radius: 999px;
+  padding: 0;
+  background: #101719;
+  color: #9ddbc3;
+}
+
+.tooltip-trigger:hover,
+.tooltip-trigger:focus-visible {
+  border-color: #53d6a4;
+  color: #fff8e6;
+}
+
+.tooltip-bubble {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(270px, calc(100vw - 48px));
+  border: 1px solid #344044;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #070b0c;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+  color: #efe8dc;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.38;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  visibility: hidden;
+}
+
+.tooltip-wrap:hover .tooltip-bubble,
+.tooltip-wrap:focus-within .tooltip-bubble {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 textarea,
@@ -250,7 +310,7 @@ select:focus {
   margin-bottom: 15px;
 }
 
-.control span,
+.control > span,
 .field-label {
   display: flex;
   justify-content: space-between;
@@ -259,6 +319,21 @@ select:focus {
   color: #cfc8bb;
   font-size: 13px;
   font-weight: 700;
+}
+
+.control-label,
+.field-title,
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.control-label .tooltip-bubble,
+.field-title .tooltip-bubble,
+.check-label .tooltip-bubble {
+  left: 0;
+  right: auto;
 }
 
 .control strong {
