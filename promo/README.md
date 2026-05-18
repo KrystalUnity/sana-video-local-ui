@@ -17,6 +17,7 @@ Repository:
 - `assets/ui-screenshot.png`: current local UI screenshot.
 - `assets/social-card.svg`: reusable 1200 x 630 social preview card.
 - `social-copy.md`: copy blocks for X, LinkedIn, Facebook, Reddit, Hugging Face, and DMs.
+- `facebook-targets.md`: first-pass Facebook group targets and posting angles.
 - `demo-script.md`: short video recording plan.
 - `release-checklist.md`: pre-share checklist.
 
