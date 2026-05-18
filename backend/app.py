@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import gc
+import json
+import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +23,11 @@ from PIL import Image
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = APP_ROOT / "outputs"
+LOCAL_PROFILES_FILE = APP_ROOT / "model-profiles.local.json"
+DEFAULT_MODEL_ID = "sana-video-2b-480p"
 DEFAULT_MODEL_NAME = "SANA-Video_2B_480p_diffusers"
+DEFAULT_MODEL_LABEL = "SANA-Video 2B 480p"
+SUPPORTED_PIPELINE_FAMILIES = {"sana-video-diffusers"}
 DEFAULT_NEGATIVE = (
     "jitter, flicker, warped geometry, deformed anatomy, broken limbs, sudden cuts, "
     "heavy blur, ghosting, low quality, text artifacts, watermark"
@@ -31,8 +37,6 @@ OUTPUTS.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_model_dir() -> Path:
-    import os
-
     explicit = os.environ.get("SANA_MODEL_DIR")
     if explicit:
         return Path(explicit).expanduser().resolve()
@@ -48,7 +52,89 @@ def resolve_model_dir() -> Path:
     return candidates[0].resolve()
 
 
-MODEL = resolve_model_dir()
+@dataclass(frozen=True)
+class ModelProfile:
+    id: str
+    label: str
+    path: Path
+    pipeline_family: str = "sana-video-diffusers"
+    description: str = "Current SANA-Video diffusers pipeline."
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "path": str(self.path),
+            "pipelineFamily": self.pipeline_family,
+            "description": self.description,
+            "exists": self.path.exists(),
+            "supported": self.pipeline_family in SUPPORTED_PIPELINE_FAMILIES,
+        }
+
+
+def normalize_profile_id(value: str) -> str:
+    normalized = "".join(char.lower() if char.isalnum() else "-" for char in value.strip())
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    return normalized.strip("-") or DEFAULT_MODEL_ID
+
+
+def coerce_profile(raw: dict[str, Any], index: int) -> ModelProfile:
+    label = str(raw.get("label") or raw.get("name") or f"Model profile {index + 1}")
+    profile_id = normalize_profile_id(str(raw.get("id") or label))
+    raw_path = raw.get("path") or raw.get("modelDir") or raw.get("model_dir")
+    if not raw_path:
+        raise ValueError(f"Model profile '{profile_id}' is missing a path.")
+
+    pipeline_family = str(
+        raw.get("pipelineFamily") or raw.get("pipeline_family") or "sana-video-diffusers"
+    )
+    description = str(raw.get("description") or "Local model profile.")
+    return ModelProfile(
+        id=profile_id,
+        label=label,
+        path=Path(str(raw_path)).expanduser().resolve(),
+        pipeline_family=pipeline_family,
+        description=description,
+    )
+
+
+def load_model_profiles() -> list[ModelProfile]:
+    raw_config = os.environ.get("SANA_MODEL_PROFILES_JSON")
+    if raw_config:
+        raw_profiles = json.loads(raw_config)
+    elif LOCAL_PROFILES_FILE.exists():
+        raw_profiles = json.loads(LOCAL_PROFILES_FILE.read_text(encoding="utf-8"))
+    else:
+        raw_profiles = None
+
+    if raw_profiles:
+        if not isinstance(raw_profiles, list):
+            raise ValueError("Model profile config must be a JSON array.")
+        return [coerce_profile(raw, index) for index, raw in enumerate(raw_profiles)]
+
+    return [
+        ModelProfile(
+            id=DEFAULT_MODEL_ID,
+            label=DEFAULT_MODEL_LABEL,
+            path=resolve_model_dir(),
+            description="Default SANA-Video 2B 480p diffusers model.",
+        )
+    ]
+
+
+def model_profiles_by_id() -> dict[str, ModelProfile]:
+    return {profile.id: profile for profile in load_model_profiles()}
+
+
+def get_model_profile(profile_id: str) -> ModelProfile:
+    profiles = model_profiles_by_id()
+    profile = profiles.get(profile_id) or profiles.get(DEFAULT_MODEL_ID)
+    if not profile and profiles and profile_id in {"", DEFAULT_MODEL_ID}:
+        profile = next(iter(profiles.values()))
+    if not profile:
+        raise RuntimeError(f"Unknown model profile: {profile_id}")
+    return profile
 
 
 @dataclass
@@ -56,6 +142,7 @@ class Job:
     id: str
     status: str
     prompt: str
+    model_profile: str
     mode: str
     memory_mode: str
     total_steps: int
@@ -76,6 +163,7 @@ class Job:
             "id": self.id,
             "status": self.status,
             "prompt": self.prompt,
+            "modelProfile": self.model_profile,
             "mode": self.mode,
             "memoryMode": self.memory_mode,
             "totalSteps": self.total_steps,
@@ -98,6 +186,7 @@ jobs_lock = Lock()
 pipeline_lock = Lock()
 executor = ThreadPoolExecutor(max_workers=1)
 pipeline: SanaImageToVideoPipeline | SanaVideoPipeline | None = None
+pipeline_profile_key: str | None = None
 pipeline_mode: str | None = None
 pipeline_memory_mode: str | None = None
 
@@ -109,22 +198,35 @@ def set_job(job_id: str, **updates: Any) -> None:
             setattr(job, key, value)
 
 
-def get_pipeline(mode: str, memory_mode: str) -> SanaImageToVideoPipeline | SanaVideoPipeline:
-    global pipeline, pipeline_mode, pipeline_memory_mode
+def get_pipeline(mode: str, memory_mode: str, model_profile_id: str) -> SanaImageToVideoPipeline | SanaVideoPipeline:
+    global pipeline, pipeline_profile_key, pipeline_mode, pipeline_memory_mode
+
+    profile = get_model_profile(model_profile_id)
+    profile_key = f"{profile.id}:{profile.path}"
 
     with pipeline_lock:
-        if pipeline is not None and pipeline_mode == mode and pipeline_memory_mode == memory_mode:
+        if (
+            pipeline is not None
+            and pipeline_profile_key == profile_key
+            and pipeline_mode == mode
+            and pipeline_memory_mode == memory_mode
+        ):
             return pipeline
 
         unload_pipeline_locked()
 
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is not available.")
-        if not MODEL.exists():
-            raise RuntimeError(f"Model folder not found: {MODEL}")
+        if profile.pipeline_family not in SUPPORTED_PIPELINE_FAMILIES:
+            raise RuntimeError(
+                f"Model profile '{profile.label}' uses unsupported pipeline family "
+                f"'{profile.pipeline_family}'. Add a backend adapter before running it."
+            )
+        if not profile.path.exists():
+            raise RuntimeError(f"Model folder not found: {profile.path}")
 
         cls = SanaImageToVideoPipeline if mode == "image-to-video" else SanaVideoPipeline
-        pipeline = cls.from_pretrained(str(MODEL), torch_dtype=torch.bfloat16, local_files_only=True)
+        pipeline = cls.from_pretrained(str(profile.path), torch_dtype=torch.bfloat16, local_files_only=True)
         pipeline.vae.to(torch.float32)
         pipeline.text_encoder.to(torch.bfloat16)
 
@@ -135,15 +237,17 @@ def get_pipeline(mode: str, memory_mode: str) -> SanaImageToVideoPipeline | Sana
         else:
             pipeline.enable_model_cpu_offload()
 
+        pipeline_profile_key = profile_key
         pipeline_mode = mode
         pipeline_memory_mode = memory_mode
         return pipeline
 
 
 def unload_pipeline_locked() -> None:
-    global pipeline, pipeline_mode, pipeline_memory_mode
+    global pipeline, pipeline_profile_key, pipeline_mode, pipeline_memory_mode
 
     pipeline = None
+    pipeline_profile_key = None
     pipeline_mode = None
     pipeline_memory_mode = None
     gc.collect()
@@ -161,17 +265,19 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
     steps = int(params["steps"])
     frames = int(params["frames"])
     memory_mode = str(params["memory_mode"])
+    model_profile_id = str(params["model_profile"])
+    profile = get_model_profile(model_profile_id)
 
     set_job(
         job_id,
         status="running",
         started_at=time.time(),
         progress=0.04,
-        message="Loading pipeline",
+        message=f"Loading {profile.label}",
     )
 
     try:
-        pipe = get_pipeline(mode, memory_mode)
+        pipe = get_pipeline(mode, memory_mode, model_profile_id)
         seed = int(params["seed"])
         if seed < 0:
             seed = int(torch.seed() % (2**31))
@@ -180,7 +286,7 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
         if "motion score:" not in prompt.lower():
             prompt = f"{prompt} motion score: {int(params['motion_score'])}."
 
-        out_name = f"sana_{'i2v' if image_path else 't2v'}_480p_{int(time.time())}_seed{seed}.mp4"
+        out_name = f"sana_{profile.id}_{'i2v' if image_path else 't2v'}_{int(time.time())}_seed{seed}.mp4"
         out_path = OUTPUTS / out_name
 
         kwargs: dict[str, Any] = {
@@ -266,13 +372,21 @@ app.mount("/outputs", StaticFiles(directory=str(OUTPUTS)), name="outputs")
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+    profiles = load_model_profiles()
+    default_profile = profiles[0]
     return {
         "ok": True,
         "cudaAvailable": torch.cuda.is_available(),
         "gpuName": gpu_name,
-        "modelDir": str(MODEL),
-        "modelExists": MODEL.exists(),
+        "modelDir": str(default_profile.path),
+        "modelExists": default_profile.path.exists(),
+        "defaultModelProfile": default_profile.id,
     }
+
+
+@app.get("/api/model-profiles")
+def model_profiles() -> list[dict[str, Any]]:
+    return [profile.to_dict() for profile in load_model_profiles()]
 
 
 @app.post("/api/jobs")
@@ -285,6 +399,7 @@ async def create_job(
     frames: int = Form(17),
     seed: int = Form(42),
     fps: int = Form(16),
+    model_profile: str = Form(DEFAULT_MODEL_ID),
     memory_mode: str = Form("low"),
     unload_after: bool = Form(True),
     start_image: UploadFile | None = File(None),
@@ -295,6 +410,15 @@ async def create_job(
         raise HTTPException(status_code=400, detail="prompt is required")
     if steps < 1 or frames < 1:
         raise HTTPException(status_code=400, detail="steps and frames must be positive")
+    try:
+        profile = get_model_profile(model_profile)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if profile.pipeline_family not in SUPPORTED_PIPELINE_FAMILIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model profile '{profile.label}' uses unsupported pipeline family '{profile.pipeline_family}'",
+        )
 
     job_id = uuid.uuid4().hex[:12]
     image_path: Path | None = None
@@ -310,6 +434,7 @@ async def create_job(
         id=job_id,
         status="queued",
         prompt=prompt,
+        model_profile=profile.id,
         mode=mode,
         memory_mode=memory_mode,
         total_steps=steps,
@@ -327,6 +452,7 @@ async def create_job(
         "frames": frames,
         "seed": seed,
         "fps": fps,
+        "model_profile": profile.id,
         "memory_mode": memory_mode,
         "unload_after": unload_after,
     }

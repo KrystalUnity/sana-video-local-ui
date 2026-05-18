@@ -282,6 +282,45 @@ input[type="range"] {
   padding: 0 10px;
 }
 
+.model-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  border: 1px solid #2a3738;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0d1415;
+  color: #b8c7c2;
+  font-size: 12px;
+}
+
+.model-note.ready {
+  border-color: rgba(83, 214, 164, 0.36);
+}
+
+.model-note.blocked {
+  border-color: rgba(244, 105, 82, 0.55);
+}
+
+.model-note span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #fff8e6;
+  font-weight: 800;
+}
+
+.model-note small,
+.model-note code {
+  overflow-wrap: anywhere;
+}
+
+.model-note code {
+  color: #8da19b;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
 .check-row {
   display: flex;
   align-items: center;

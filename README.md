@@ -9,10 +9,11 @@ This repository contains only the UI and backend wrapper. It does not include mo
 - Text-to-video and image-to-video generation.
 - Low VRAM mode using sequential CPU offload.
 - Balanced mode for faster runs when your GPU has enough headroom.
+- Model profile selector for swapping local model folders without editing UI code.
 - Job queue with progress, current step, elapsed time, and output gallery.
 - Windows-friendly defaults tested around a 12 GB laptop GPU.
 
-## Model
+## Model Compatibility
 
 Download the model separately from Hugging Face:
 
@@ -23,6 +24,29 @@ Set `SANA_MODEL_DIR` to the downloaded model folder, or place the model at:
 `models/SANA-Video_2B_480p_diffusers`
 
 Model weights and generated outputs are ignored by git.
+
+The current backend adapter supports the SANA-Video diffusers pipeline family:
+
+- `SanaVideoPipeline` for text-to-video.
+- `SanaImageToVideoPipeline` for image-to-video start frames.
+
+If a future SANA-WM / VM release ships with the same Diffusers pipeline API, it should be usable by pointing a model profile at the new local folder. If NVIDIA ships a different pipeline class or different generation arguments, add a new backend adapter before enabling it in the UI.
+
+Optional local model profiles can be defined in `model-profiles.local.json` at the repo root. This file is ignored by git so machine-specific paths do not leak into public commits:
+
+```json
+[
+  {
+    "id": "sana-video-2b-480p",
+    "label": "SANA-Video 2B 480p",
+    "path": "C:/models/SANA-Video_2B_480p_diffusers",
+    "pipelineFamily": "sana-video-diffusers",
+    "description": "Current SANA-Video diffusers release."
+  }
+]
+```
+
+You can also provide the same JSON array through `SANA_MODEL_PROFILES_JSON`.
 
 ## Backend
 

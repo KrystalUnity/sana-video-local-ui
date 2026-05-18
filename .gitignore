@@ -19,6 +19,7 @@ dist/
 *.tsbuildinfo
 
 # Local model/runtime data
+model-profiles.local.json
 models/
 outputs/
 *.mp4

@@ -5,6 +5,7 @@ import {
   Cpu,
   Gauge,
   Image as ImageIcon,
+  Layers,
   Loader2,
   Play,
   RotateCcw,
@@ -23,12 +24,14 @@ type Health = {
   gpuName: string | null;
   modelDir: string;
   modelExists: boolean;
+  defaultModelProfile: string;
 };
 
 type Job = {
   id: string;
   status: "queued" | "running" | "completed" | "failed";
   prompt: string;
+  modelProfile: string;
   mode: string;
   memoryMode: string;
   totalSteps: number;
@@ -52,6 +55,16 @@ type OutputFile = {
   modifiedAt: number;
 };
 
+type ModelProfile = {
+  id: string;
+  label: string;
+  path: string;
+  pipelineFamily: string;
+  description: string;
+  exists: boolean;
+  supported: boolean;
+};
+
 type FormState = {
   prompt: string;
   negativePrompt: string;
@@ -61,6 +74,7 @@ type FormState = {
   guidance: number;
   seed: number;
   fps: number;
+  modelProfile: string;
   memoryMode: "low" | "balanced";
   unloadAfter: boolean;
 };
@@ -76,6 +90,7 @@ const defaultForm: FormState = {
   guidance: 6,
   seed: 42,
   fps: 16,
+  modelProfile: "sana-video-2b-480p",
   memoryMode: "low",
   unloadAfter: true,
 };
@@ -106,22 +121,40 @@ export default function App() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
   const [outputs, setOutputs] = useState<OutputFile[]>([]);
   const [logs, setLogs] = useState<string[]>(["Workbench ready."]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedOutput, setSelectedOutput] = useState<string | null>(null);
 
-  const canGenerate = Boolean(form.prompt.trim()) && !isSubmitting && job?.status !== "running" && job?.status !== "queued";
+  const selectedModel = useMemo(
+    () => modelProfiles.find((profile) => profile.id === form.modelProfile) ?? modelProfiles[0] ?? null,
+    [form.modelProfile, modelProfiles],
+  );
+  const selectedModelReady = !selectedModel || (selectedModel.exists && selectedModel.supported);
+  const canGenerate = Boolean(form.prompt.trim()) && selectedModelReady && !isSubmitting && job?.status !== "running" && job?.status !== "queued";
   const activeOutputUrl = selectedOutput ?? toAssetUrl(job?.outputUrl ?? null) ?? toAssetUrl(outputs[0]?.url ?? null);
+  const modelStatusLabel = selectedModel
+    ? selectedModel.exists && selectedModel.supported
+      ? "Model ready"
+      : selectedModel.supported
+        ? "Model missing"
+        : "Adapter needed"
+    : health?.modelExists
+      ? "Model found"
+      : "Model missing";
+  const modelStatusGood = selectedModel ? selectedModel.exists && selectedModel.supported : Boolean(health?.modelExists);
 
   const runProfile = useMemo(() => {
     const seconds = form.frames / form.fps;
     const mode = imageFile ? "Image seed" : "Text seed";
-    return `${mode} / ${seconds.toFixed(2)}s / ${form.steps} steps`;
-  }, [form.fps, form.frames, form.steps, imageFile]);
+    const model = selectedModel?.label ?? "Default model";
+    return `${model} / ${mode} / ${seconds.toFixed(2)}s / ${form.steps} steps`;
+  }, [form.fps, form.frames, form.steps, imageFile, selectedModel]);
 
   useEffect(() => {
     refreshHealth();
+    refreshModelProfiles();
     refreshOutputs();
   }, []);
 
@@ -158,6 +191,21 @@ export default function App() {
     }
   }
 
+  async function refreshModelProfiles() {
+    try {
+      const profiles = await fetchJson<ModelProfile[]>("/api/model-profiles");
+      setModelProfiles(profiles);
+      setForm((prev) => {
+        if (profiles.length === 0 || profiles.some((profile) => profile.id === prev.modelProfile)) {
+          return prev;
+        }
+        return { ...prev, modelProfile: profiles[0].id };
+      });
+    } catch {
+      setModelProfiles([]);
+    }
+  }
+
   async function refreshOutputs() {
     try {
       setOutputs(await fetchJson<OutputFile[]>("/api/outputs"));
@@ -180,6 +228,7 @@ export default function App() {
     data.set("frames", String(form.frames));
     data.set("seed", String(form.seed));
     data.set("fps", String(form.fps));
+    data.set("model_profile", form.modelProfile);
     data.set("memory_mode", form.memoryMode);
     data.set("unload_after", String(form.unloadAfter));
     if (imageFile) data.set("start_image", imageFile);
@@ -219,7 +268,7 @@ export default function App() {
         </div>
         <div className="status-cluster">
           <SystemPill icon={<Cpu size={16} />} label={health?.gpuName ?? "GPU unknown"} tone={health?.cudaAvailable ? "good" : "bad"} />
-          <SystemPill icon={<Server size={16} />} label={health?.modelExists ? "Model found" : "Model missing"} tone={health?.modelExists ? "good" : "bad"} />
+          <SystemPill icon={<Server size={16} />} label={modelStatusLabel} tone={modelStatusGood ? "good" : "bad"} />
         </div>
       </section>
 
@@ -292,6 +341,29 @@ export default function App() {
               onChange={(event) => update("seed", Number(event.target.value))}
             />
           </label>
+
+          <label className="field-label">
+            Model
+            <select value={form.modelProfile} onChange={(event) => update("modelProfile", event.target.value)}>
+              {modelProfiles.length === 0 && <option value={form.modelProfile}>Default model</option>}
+              {modelProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {selectedModel && (
+            <div className={`model-note ${selectedModelReady ? "ready" : "blocked"}`}>
+              <span>
+                <Layers size={14} />
+                {selectedModel.supported ? selectedModel.pipelineFamily : "adapter required"}
+              </span>
+              <small>{selectedModel.description}</small>
+              <code>{selectedModel.path}</code>
+            </div>
+          )}
 
           <label className="field-label">
             Memory mode
