@@ -4,6 +4,8 @@ A local React + FastAPI workbench for running the available SANA-Video 2B diffus
 
 This repository contains only the UI and backend wrapper. It does not include model weights.
 
+![SANA Video Local UI screenshot](promo/assets/ui-screenshot.png)
+
 ## Features
 
 - Text-to-video and image-to-video generation.
@@ -94,6 +96,10 @@ From the repo root:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run_dev.ps1
 ```
+
+## Promo Kit
+
+Public-safe sharing copy, a demo script, a release checklist, and reusable visual assets live in [`promo/`](promo/README.md).
 
 ## Safe Starting Settings
 
