@@ -1,0 +1,13 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pillow>=10.0
+transformers>=4.45
+accelerate>=0.34
+safetensors>=0.4
+sentencepiece>=0.2
+protobuf>=5
+imageio>=2.35
+imageio-ffmpeg>=0.5
+huggingface-hub>=0.25
+diffusers @ git+https://github.com/huggingface/diffusers
