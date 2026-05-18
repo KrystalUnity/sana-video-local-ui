@@ -18,7 +18,7 @@ from diffusers.utils import export_to_video
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
+from PIL import Image, ImageStat
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -262,6 +262,32 @@ def unload_pipeline() -> None:
         unload_pipeline_locked()
 
 
+def validate_generated_frames(frames: list[Any]) -> None:
+    if not frames:
+        raise RuntimeError("Generation returned no frames.")
+
+    sample_count = min(len(frames), 9)
+    if sample_count == 1:
+        sample_indexes = [0]
+    else:
+        sample_indexes = sorted({round(index * (len(frames) - 1) / (sample_count - 1)) for index in range(sample_count)})
+
+    black_samples = 0
+    for index in sample_indexes:
+        frame = frames[index].convert("RGB") if isinstance(frames[index], Image.Image) else Image.fromarray(frames[index]).convert("RGB")
+        luma = frame.convert("L")
+        extrema = luma.getextrema()
+        mean = ImageStat.Stat(luma).mean[0]
+        if extrema[1] <= 3 and mean <= 2.5:
+            black_samples += 1
+
+    if black_samples == len(sample_indexes):
+        raise RuntimeError(
+            "Generation produced near-black frames, likely from invalid diffusion output. "
+            "Try a different seed, 17-25 frames, guidance 4-5, and a simpler prompt."
+        )
+
+
 def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None) -> None:
     steps = int(params["steps"])
     frames = int(params["frames"])
@@ -345,6 +371,7 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
             unload_pipeline()
 
         set_job(job_id, progress=0.94, message="Encoding MP4", peak_allocated_gb=round(peak_gb, 2))
+        validate_generated_frames(combined_frames)
         export_to_video(combined_frames, str(out_path), fps=int(params["fps"]))
 
         set_job(
