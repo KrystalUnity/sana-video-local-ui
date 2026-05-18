@@ -7,6 +7,7 @@ This repository contains only the UI and backend wrapper. It does not include mo
 ## Features
 
 - Text-to-video and image-to-video generation.
+- Chained segment generation for longer clips using each segment's last frame as the next start image.
 - Low VRAM mode using sequential CPU offload.
 - Balanced mode for faster runs when your GPU has enough headroom.
 - Model profile selector for swapping local model folders without editing UI code.
@@ -47,6 +48,16 @@ Optional local model profiles can be defined in `model-profiles.local.json` at t
 ```
 
 You can also provide the same JSON array through `SANA_MODEL_PROFILES_JSON`.
+
+## Longer Videos
+
+The app avoids asking the GPU to render one large clip in a single pass. Instead, set `Segments` above `1`. The first segment uses text-to-video unless you upload a start image. Each later segment uses the previous segment's last generated frame as its start image, then the backend exports the combined frames as one MP4.
+
+For example, `49` frames, `8` FPS, and `4` segments produces about `24` seconds of video:
+
+`49 + (4 - 1) * 48 = 193 frames`
+
+The first frame of each chained continuation is skipped during assembly to reduce visible duplicate-frame pauses.
 
 ## Backend
 
@@ -90,6 +101,7 @@ For 12 GB laptop GPUs, start with:
 
 - Memory mode: `low`
 - Frames: `17` or `25`
+- Segments: `1` or `2`; try `4` after short runs succeed
 - Steps: `8` or `12`
 - Unload after generation: enabled
 

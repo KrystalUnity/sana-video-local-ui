@@ -36,6 +36,7 @@ type Job = {
   memoryMode: string;
   totalSteps: number;
   frames: number;
+  segments: number;
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;
@@ -71,6 +72,7 @@ type FormState = {
   motionScore: number;
   steps: number;
   frames: number;
+  segments: number;
   guidance: number;
   seed: number;
   fps: number;
@@ -87,6 +89,7 @@ const defaultForm: FormState = {
   motionScore: 20,
   steps: 8,
   frames: 17,
+  segments: 1,
   guidance: 6,
   seed: 42,
   fps: 16,
@@ -144,13 +147,14 @@ export default function App() {
       ? "Model found"
       : "Model missing";
   const modelStatusGood = selectedModel ? selectedModel.exists && selectedModel.supported : Boolean(health?.modelExists);
+  const projectedFrames = form.frames + Math.max(form.segments - 1, 0) * Math.max(form.frames - 1, 1);
 
   const runProfile = useMemo(() => {
-    const seconds = form.frames / form.fps;
-    const mode = imageFile ? "Image seed" : "Text seed";
+    const seconds = projectedFrames / form.fps;
+    const mode = form.segments > 1 ? (imageFile ? "Image chain" : "Text chain") : imageFile ? "Image seed" : "Text seed";
     const model = selectedModel?.label ?? "Default model";
-    return `${model} / ${mode} / ${seconds.toFixed(2)}s / ${form.steps} steps`;
-  }, [form.fps, form.frames, form.steps, imageFile, selectedModel]);
+    return `${model} / ${mode} / ${seconds.toFixed(2)}s / ${form.segments} segment${form.segments === 1 ? "" : "s"}`;
+  }, [form.fps, form.segments, imageFile, projectedFrames, selectedModel]);
 
   useEffect(() => {
     refreshHealth();
@@ -226,6 +230,7 @@ export default function App() {
     data.set("steps", String(form.steps));
     data.set("guidance", String(form.guidance));
     data.set("frames", String(form.frames));
+    data.set("segments", String(form.segments));
     data.set("seed", String(form.seed));
     data.set("fps", String(form.fps));
     data.set("model_profile", form.modelProfile);
@@ -330,6 +335,7 @@ export default function App() {
           <Control label="Motion" value={form.motionScore} min={1} max={100} step={1} onChange={(value) => update("motionScore", value)} />
           <Control label="Steps" value={form.steps} min={4} max={30} step={1} onChange={(value) => update("steps", value)} />
           <Control label="Frames" value={form.frames} min={9} max={49} step={8} onChange={(value) => update("frames", value)} />
+          <Control label="Segments" value={form.segments} min={1} max={8} step={1} onChange={(value) => update("segments", value)} />
           <Control label="Guidance" value={form.guidance} min={1} max={10} step={0.25} onChange={(value) => update("guidance", value)} />
           <Control label="FPS" value={form.fps} min={8} max={24} step={1} onChange={(value) => update("fps", value)} />
 
@@ -414,7 +420,8 @@ export default function App() {
           </div>
           <div className="metric-grid">
             <Metric label="Step" value={job ? `${job.step}/${job.totalSteps}` : "-"} />
-            <Metric label="Frames" value={job ? String(job.frames) : String(form.frames)} />
+            <Metric label="Frames" value={job ? String(job.frames) : String(projectedFrames)} />
+            <Metric label="Segments" value={job ? String(job.segments) : String(form.segments)} />
             <Metric label="Peak VRAM" value={job?.peakAllocatedGb ? `${job.peakAllocatedGb} GB` : "-"} />
             <Metric label="Elapsed" value={job?.startedAt ? formatClock((job.finishedAt ?? Date.now() / 1000) - job.startedAt) : "-"} />
           </div>

@@ -147,6 +147,7 @@ class Job:
     memory_mode: str
     total_steps: int
     frames: int
+    segments: int
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None
@@ -168,6 +169,7 @@ class Job:
             "memoryMode": self.memory_mode,
             "totalSteps": self.total_steps,
             "frames": self.frames,
+            "segments": self.segments,
             "createdAt": self.created_at,
             "startedAt": self.started_at,
             "finishedAt": self.finished_at,
@@ -261,9 +263,9 @@ def unload_pipeline() -> None:
 
 
 def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None) -> None:
-    mode = "image-to-video" if image_path else "text-to-video"
     steps = int(params["steps"])
     frames = int(params["frames"])
+    segments = int(params["segments"])
     memory_mode = str(params["memory_mode"])
     model_profile_id = str(params["model_profile"])
     profile = get_model_profile(model_profile_id)
@@ -277,7 +279,6 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
     )
 
     try:
-        pipe = get_pipeline(mode, memory_mode, model_profile_id)
         seed = int(params["seed"])
         if seed < 0:
             seed = int(torch.seed() % (2**31))
@@ -286,40 +287,65 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
         if "motion score:" not in prompt.lower():
             prompt = f"{prompt} motion score: {int(params['motion_score'])}."
 
-        out_name = f"sana_{profile.id}_{'i2v' if image_path else 't2v'}_{int(time.time())}_seed{seed}.mp4"
+        output_mode = "chain" if segments > 1 else "i2v" if image_path else "t2v"
+        out_name = f"sana_{profile.id}_{output_mode}_{int(time.time())}_seed{seed}.mp4"
         out_path = OUTPUTS / out_name
 
-        kwargs: dict[str, Any] = {
-            "prompt": prompt,
-            "negative_prompt": str(params["negative_prompt"]).strip(),
-            "height": 480,
-            "width": 832,
-            "frames": frames,
-            "guidance_scale": float(params["guidance"]),
-            "num_inference_steps": steps,
-            "generator": torch.Generator(device="cuda").manual_seed(seed),
-            "callback_on_step_end": make_step_callback(job_id, steps),
-        }
+        combined_frames: list[Any] = []
+        current_image: Image.Image | None = None
         if image_path:
-            kwargs["image"] = Image.open(image_path).convert("RGB")
+            current_image = Image.open(image_path).convert("RGB")
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
 
-        set_job(job_id, progress=0.08, message=f"Generating {frames} frames")
-        result = pipe(**kwargs).frames[0]
-
         peak_gb = 0.0
-        if torch.cuda.is_available():
-            peak_gb = torch.cuda.max_memory_allocated() / (1024**3)
-            torch.cuda.empty_cache()
+        for segment_index in range(segments):
+            segment_mode = "image-to-video" if current_image else "text-to-video"
+            pipe = get_pipeline(segment_mode, memory_mode, model_profile_id)
+            segment_seed = seed + segment_index
+            kwargs: dict[str, Any] = {
+                "prompt": prompt,
+                "negative_prompt": str(params["negative_prompt"]).strip(),
+                "height": 480,
+                "width": 832,
+                "frames": frames,
+                "guidance_scale": float(params["guidance"]),
+                "num_inference_steps": steps,
+                "generator": torch.Generator(device="cuda").manual_seed(segment_seed),
+                "callback_on_step_end": make_step_callback(job_id, steps, segment_index, segments),
+            }
+            if current_image:
+                kwargs["image"] = current_image
+
+            set_job(
+                job_id,
+                progress=0.08 + (segment_index / max(segments, 1)) * 0.82,
+                message=f"Generating segment {segment_index + 1}/{segments}",
+            )
+            result = list(pipe(**kwargs).frames[0])
+            if not result:
+                raise RuntimeError(f"Segment {segment_index + 1} returned no frames.")
+
+            frames_to_add = result
+            if segment_index > 0 and len(result) > 1:
+                frames_to_add = result[1:]
+            combined_frames.extend(frames_to_add)
+            current_image = result[-1].convert("RGB")
+
+            if torch.cuda.is_available():
+                peak_gb = max(peak_gb, torch.cuda.max_memory_allocated() / (1024**3))
+                torch.cuda.empty_cache()
+
+            if params["unload_after"] and segment_index < segments - 1:
+                unload_pipeline()
 
         if params["unload_after"]:
             unload_pipeline()
 
         set_job(job_id, progress=0.94, message="Encoding MP4", peak_allocated_gb=round(peak_gb, 2))
-        export_to_video(result, str(out_path), fps=int(params["fps"]))
+        export_to_video(combined_frames, str(out_path), fps=int(params["fps"]))
 
         set_job(
             job_id,
@@ -343,15 +369,17 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
             torch.cuda.empty_cache()
 
 
-def make_step_callback(job_id: str, steps: int):
+def make_step_callback(job_id: str, steps: int, segment_index: int, segments: int):
     def callback(_pipe, step: int, _timestep, callback_kwargs: dict[str, Any]) -> dict[str, Any]:
         current = step + 1
-        progress = 0.08 + (current / max(steps, 1)) * 0.82
+        total_step = segment_index * steps + current
+        total_steps = max(steps * segments, 1)
+        progress = 0.08 + (total_step / total_steps) * 0.82
         set_job(
             job_id,
-            step=current,
+            step=total_step,
             progress=min(progress, 0.9),
-            message=f"Diffusion step {current}/{steps}",
+            message=f"Segment {segment_index + 1}/{segments} step {current}/{steps}",
         )
         return callback_kwargs
 
@@ -397,6 +425,7 @@ async def create_job(
     steps: int = Form(8),
     guidance: float = Form(6.0),
     frames: int = Form(17),
+    segments: int = Form(1),
     seed: int = Form(42),
     fps: int = Form(16),
     model_profile: str = Form(DEFAULT_MODEL_ID),
@@ -410,6 +439,8 @@ async def create_job(
         raise HTTPException(status_code=400, detail="prompt is required")
     if steps < 1 or frames < 1:
         raise HTTPException(status_code=400, detail="steps and frames must be positive")
+    if segments < 1 or segments > 8:
+        raise HTTPException(status_code=400, detail="segments must be between 1 and 8")
     try:
         profile = get_model_profile(model_profile)
     except Exception as exc:
@@ -429,7 +460,8 @@ async def create_job(
         image_path = OUTPUTS / f"{job_id}_start.png"
         image.save(image_path)
 
-    mode = "image-to-video" if image_path else "text-to-video"
+    mode = "chain" if segments > 1 else "image-to-video" if image_path else "text-to-video"
+    output_frames = frames + max(segments - 1, 0) * max(frames - 1, 1)
     job = Job(
         id=job_id,
         status="queued",
@@ -437,8 +469,9 @@ async def create_job(
         model_profile=profile.id,
         mode=mode,
         memory_mode=memory_mode,
-        total_steps=steps,
-        frames=frames,
+        total_steps=steps * segments,
+        frames=output_frames,
+        segments=segments,
     )
     with jobs_lock:
         jobs[job_id] = job
@@ -450,6 +483,7 @@ async def create_job(
         "steps": steps,
         "guidance": guidance,
         "frames": frames,
+        "segments": segments,
         "seed": seed,
         "fps": fps,
         "model_profile": profile.id,
