@@ -3,6 +3,8 @@ from __future__ import annotations
 import gc
 import json
 import os
+import shlex
+import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -28,7 +30,8 @@ DEFAULT_MODEL_ID = "sana-video-2b-480p"
 DEFAULT_MODEL_NAME = "SANA-Video_2B_480p_diffusers"
 DEFAULT_MODEL_LABEL = "SANA-Video 2B 480p"
 SANA_WM_PROFILE_ID = "sana-wm-wsl2-probe"
-SUPPORTED_PIPELINE_FAMILIES = {"sana-video-diffusers"}
+SANA_WM_PIPELINE_FAMILY = "sana-wm-wsl2-probe"
+SUPPORTED_PIPELINE_FAMILIES = {"sana-video-diffusers", SANA_WM_PIPELINE_FAMILY}
 DEFAULT_NEGATIVE = (
     "jitter, flicker, warped geometry, deformed anatomy, broken limbs, sudden cuts, "
     "heavy blur, ghosting, low quality, text artifacts, watermark"
@@ -141,10 +144,10 @@ def load_model_profiles() -> list[ModelProfile]:
             id=SANA_WM_PROFILE_ID,
             label="SANA-WM 720p (WSL2 probe)",
             path=resolve_sana_wm_lab_dir(),
-            pipeline_family="sana-wm-wsl2-probe",
+            pipeline_family=SANA_WM_PIPELINE_FAMILY,
             description=(
-                "Experimental SANA-WM stage-1/no-refiner probe verified through WSL2. "
-                "Visible for status only until a UI adapter is added."
+                "Experimental SANA-WM stage-1/no-refiner generation through WSL2. "
+                "Uses the official demo camera/intrinsics path."
             ),
         ),
     ]
@@ -315,6 +318,113 @@ def validate_generated_frames(frames: list[Any]) -> None:
         )
 
 
+def windows_path_to_wsl(path: Path) -> str:
+    resolved = path.resolve()
+    drive = resolved.drive.rstrip(":").lower()
+    if not drive:
+        raise RuntimeError(f"Cannot convert path to WSL mount path: {resolved}")
+    rest = resolved.as_posix().split(":", 1)[1].lstrip("/")
+    return f"/mnt/{drive}/{rest}"
+
+
+def run_sana_wm_generation(job_id: str, params: dict[str, Any], image_path: Path | None, profile: ModelProfile) -> None:
+    lab = os.environ.get("SANA_WM_LAB_WSL", "/root/sana-wm-lab")
+    steps = int(params["steps"])
+    frames = int(params["frames"])
+    fps = int(params["fps"])
+    seed = int(params["seed"])
+    if seed < 0:
+        seed = 42
+
+    prompt_path = OUTPUTS / f"{job_id}_sana_wm_prompt.txt"
+    prompt_path.write_text(str(params["prompt"]).strip(), encoding="utf-8")
+
+    out_name = f"sana_{profile.id}_wm_{int(time.time())}_seed{seed}.mp4"
+    wsl_output = f"{lab}/outputs/{job_id}_generated.mp4"
+    local_output = OUTPUTS / out_name
+
+    if image_path:
+        image_arg = windows_path_to_wsl(image_path)
+    else:
+        image_arg = f"{lab}/Sana/asset/sana_wm/demo_0.png"
+
+    set_job(job_id, progress=0.08, message="Starting SANA-WM in WSL2")
+    command_parts = [
+        "cd",
+        shlex.quote(f"{lab}/Sana"),
+        "&&",
+        "source",
+        shlex.quote(f"{lab}/.venv311/bin/activate"),
+        "&&",
+        "export",
+        f"PYTHONPATH={shlex.quote(f'{lab}/Sana')}:$PYTHONPATH",
+        "&&",
+        "mkdir",
+        "-p",
+        shlex.quote(f"{lab}/outputs"),
+        "&&",
+        "python",
+        "inference_video_scripts/inference_sana_wm.py",
+        "--config",
+        shlex.quote(f"{lab}/configs/sana_wm_stage1_local.yaml"),
+        "--model_path",
+        shlex.quote(f"{lab}/models/SANA-WM_bidirectional_stage1/dit/sana_wm_1600m_720p.safetensors"),
+        "--image",
+        shlex.quote(image_arg),
+        "--prompt",
+        shlex.quote(windows_path_to_wsl(prompt_path)),
+        "--output_dir",
+        shlex.quote(f"{lab}/outputs"),
+        "--name",
+        shlex.quote(job_id),
+        "--camera",
+        "asset/sana_wm/demo_0_pose.npy",
+        "--intrinsics",
+        "asset/sana_wm/demo_0_intrinsics.npy",
+        "--num_frames",
+        str(frames),
+        "--fps",
+        str(fps),
+        "--step",
+        str(steps),
+        "--cfg_scale",
+        str(float(params["guidance"])),
+        "--seed",
+        str(seed),
+        "--no_refiner",
+        "--offload_vae",
+        "&&",
+        "cp",
+        shlex.quote(wsl_output),
+        shlex.quote(windows_path_to_wsl(local_output)),
+    ]
+    command = " ".join(command_parts)
+
+    set_job(job_id, progress=0.12, message="Running SANA-WM no-refiner probe")
+    result = subprocess.run(
+        ["wsl.exe", "-d", "Ubuntu", "--", "bash", "-lc", command],
+        capture_output=True,
+        text=True,
+        timeout=60 * 45,
+    )
+    if result.returncode != 0:
+        tail = "\n".join((result.stderr or result.stdout).splitlines()[-12:])
+        raise RuntimeError(f"SANA-WM WSL2 run failed:\n{tail}")
+    if not local_output.exists():
+        raise RuntimeError(f"SANA-WM finished but output was not copied back: {local_output}")
+
+    set_job(
+        job_id,
+        status="completed",
+        progress=1.0,
+        message="Completed",
+        output_url=f"/outputs/{out_name}",
+        output_name=out_name,
+        finished_at=time.time(),
+        peak_allocated_gb=None,
+    )
+
+
 def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None) -> None:
     steps = int(params["steps"])
     frames = int(params["frames"])
@@ -332,6 +442,10 @@ def run_generation(job_id: str, params: dict[str, Any], image_path: Path | None)
     )
 
     try:
+        if profile.pipeline_family == SANA_WM_PIPELINE_FAMILY:
+            run_sana_wm_generation(job_id, params, image_path, profile)
+            return
+
         seed = int(params["seed"])
         if seed < 0:
             seed = int(torch.seed() % (2**31))

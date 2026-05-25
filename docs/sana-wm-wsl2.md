@@ -93,8 +93,8 @@ From Windows Explorer, WSL files are usually visible under:
 
 ## Current Limitations
 
-- This is CLI-only. The React UI shows SANA-WM as an adapter-needed profile,
-  but generation still targets the SANA-Video Diffusers adapter.
+- The React UI has a minimal SANA-WM adapter for the same no-refiner WSL2 path.
+  It still uses the official demo camera and intrinsics.
 - The SANA-WM full refiner is not part of the tiny probe.
 - Native Windows is not the recommended path because the official script relies
   on Linux-friendly Triton and attention packages.
@@ -114,5 +114,5 @@ A proper UI adapter should expose SANA-WM-specific inputs:
 - no-refiner/refiner mode
 - VAE/refiner offload controls
 
-Until then, treat the WSL2 script as the tested probe lane and the main UI as
-the SANA-Video workbench.
+The first UI adapter uses this same WSL2 probe lane. Camera/action controls are
+the next step for making it feel native inside the workbench.
