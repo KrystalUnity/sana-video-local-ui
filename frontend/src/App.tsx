@@ -376,7 +376,7 @@ export default function App() {
               {modelProfiles.length === 0 && <option value={form.modelProfile}>Default model</option>}
               {modelProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
-                  {profile.label}
+                  {profile.supported ? profile.label : `${profile.label} - adapter needed`}
                 </option>
               ))}
             </select>

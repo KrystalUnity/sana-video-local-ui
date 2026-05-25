@@ -9,7 +9,7 @@ This repository contains only the UI and backend wrapper. It does not include mo
 ## Current Status
 
 - SANA-Video 2B Diffusers: supported in the React + FastAPI workbench.
-- SANA-WM: experimentally verified through WSL2 CLI scripts, not yet wired into the UI.
+- SANA-WM: visible as an experimental WSL2 profile, but not yet wired into generation.
 
 The SANA-WM path uses the official NVLabs inference script and Linux CUDA
 dependencies. See [Experimental SANA-WM on WSL2](docs/sana-wm-wsl2.md).
@@ -46,7 +46,7 @@ script with camera/action controls, prompt files, and Linux-friendly Triton
 dependencies. A tiny WSL2 stage-1/no-refiner probe is included in
 [`scripts/wsl/`](scripts/wsl/) and documented in
 [`docs/sana-wm-wsl2.md`](docs/sana-wm-wsl2.md). A proper UI adapter should be
-added before SANA-WM appears as a selectable workbench model.
+added before the SANA-WM profile can generate from the workbench.
 
 Optional local model profiles can be defined in `model-profiles.local.json` at the repo root. This file is ignored by git so machine-specific paths do not leak into public commits:
 

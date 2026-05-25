@@ -93,7 +93,8 @@ From Windows Explorer, WSL files are usually visible under:
 
 ## Current Limitations
 
-- This is CLI-only. The React UI still targets the SANA-Video Diffusers adapter.
+- This is CLI-only. The React UI shows SANA-WM as an adapter-needed profile,
+  but generation still targets the SANA-Video Diffusers adapter.
 - The SANA-WM full refiner is not part of the tiny probe.
 - Native Windows is not the recommended path because the official script relies
   on Linux-friendly Triton and attention packages.

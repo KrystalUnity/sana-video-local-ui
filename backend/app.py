@@ -27,6 +27,7 @@ LOCAL_PROFILES_FILE = APP_ROOT / "model-profiles.local.json"
 DEFAULT_MODEL_ID = "sana-video-2b-480p"
 DEFAULT_MODEL_NAME = "SANA-Video_2B_480p_diffusers"
 DEFAULT_MODEL_LABEL = "SANA-Video 2B 480p"
+SANA_WM_PROFILE_ID = "sana-wm-wsl2-probe"
 SUPPORTED_PIPELINE_FAMILIES = {"sana-video-diffusers"}
 DEFAULT_NEGATIVE = (
     "jitter, flicker, warped geometry, deformed anatomy, broken limbs, sudden cuts, "
@@ -50,6 +51,22 @@ def resolve_model_dir() -> Path:
             return candidate.resolve()
 
     return candidates[0].resolve()
+
+
+def resolve_sana_wm_lab_dir() -> Path:
+    explicit = os.environ.get("SANA_WM_LAB_WINDOWS")
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+
+    candidates = [
+        Path(r"\\wsl.localhost\Ubuntu\root\sana-wm-lab"),
+        Path(r"\\wsl$\Ubuntu\root\sana-wm-lab"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
 
 
 @dataclass(frozen=True)
@@ -119,7 +136,17 @@ def load_model_profiles() -> list[ModelProfile]:
             label=DEFAULT_MODEL_LABEL,
             path=resolve_model_dir(),
             description="Default SANA-Video 2B 480p diffusers model.",
-        )
+        ),
+        ModelProfile(
+            id=SANA_WM_PROFILE_ID,
+            label="SANA-WM 720p (WSL2 probe)",
+            path=resolve_sana_wm_lab_dir(),
+            pipeline_family="sana-wm-wsl2-probe",
+            description=(
+                "Experimental SANA-WM stage-1/no-refiner probe verified through WSL2. "
+                "Visible for status only until a UI adapter is added."
+            ),
+        ),
     ]
 
 
