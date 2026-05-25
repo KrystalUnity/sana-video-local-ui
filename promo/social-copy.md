@@ -10,6 +10,8 @@ Got SANA-Video 2B running locally and built a small Windows-friendly React + Fas
 
 It has text-to-video, image starts, chained segments for longer clips, low-VRAM mode, model profiles, progress tracking, and an output gallery.
 
+Update: SANA-WM is now also verified locally through WSL2 as a CLI probe. Native Windows hit Linux CUDA/Triton dependency walls, but WSL2 worked on a 12 GB laptop GPU with the stage-1/no-refiner path.
+
 Repo:
 https://github.com/KrystalUnity/sana-video-local-ui
 
@@ -25,7 +27,17 @@ Features:
 - low-VRAM mode
 - model profiles for future swaps
 - progress + output gallery
+- experimental SANA-WM WSL2 probe
 
+https://github.com/KrystalUnity/sana-video-local-ui
+
+## X / Threads - SANA-WM Update
+
+SANA-WM is real now, and we got it running locally on a Windows laptop through WSL2.
+
+Native Windows hit the expected Triton/Linux CUDA wall. WSL2 Ubuntu saw the RTX 5070 Ti Laptop GPU, installed the Linux stack, and generated a 1280x704 stage-1/no-refiner probe.
+
+Repo + notes:
 https://github.com/KrystalUnity/sana-video-local-ui
 
 ## LinkedIn
@@ -34,7 +46,7 @@ I put together a local workbench for experimenting with SANA-Video 2B on consume
 
 The goal is practical testing, not hype: a React + FastAPI UI with text-to-video, image start frames, chained segment generation for longer clips, low-VRAM controls, model profiles, job progress, and an output gallery.
 
-It does not include model weights. The repo is designed so future SANA-WM / VM support can be added through model profiles and backend adapters once the actual downloadable release path is clear.
+It does not include model weights. Since the SANA-WM release landed, I also added an experimental WSL2 CLI probe using the official NVLabs script. That path is verified locally, but it is not yet integrated into the React UI.
 
 Repo:
 https://github.com/KrystalUnity/sana-video-local-ui
@@ -49,6 +61,8 @@ Repo is public now:
 https://github.com/KrystalUnity/sana-video-local-ui
 
 PRs and hardware notes welcome.
+
+SANA-WM note: WSL2 is now the practical Windows path for the official script because the dependency stack expects Linux CUDA/Triton packages.
 
 ## Reddit / Community Post
 
@@ -67,7 +81,7 @@ Features:
 - model profiles for swapping local model folders
 - job progress, peak VRAM reporting, and output gallery
 
-It does not include model weights. Future SANA-WM / VM support depends on what NVIDIA actually releases and whether a new backend adapter is needed.
+It does not include model weights. SANA-WM has now been tested through WSL2 with the official NVLabs script. The UI still targets SANA-Video; SANA-WM currently lives as an experimental CLI probe.
 
 Repo:
 https://github.com/KrystalUnity/sana-video-local-ui
@@ -90,6 +104,8 @@ https://github.com/KrystalUnity/sana-video-local-ui
 
 It is a local React + FastAPI UI for SANA-Video 2B with start images, chained segments, low-VRAM controls, and model profiles. Would love a sanity check on setup docs or hardware notes if you have a minute.
 
+We also got SANA-WM running via WSL2 as a separate CLI probe, so the repo now has notes for that path too.
+
 ## Reply To Jeff
 
 Repo is live:
@@ -100,4 +116,4 @@ It is still early, but the UI has the useful bits now: image starts, chained seg
 
 ## Hashtags
 
-`#LocalAI #GenerativeAI #TextToVideo #SANA #Diffusers #OpenSource #ReactJS #FastAPI #NVIDIA`
+`#LocalAI #GenerativeAI #TextToVideo #SANA #SanaWM #Diffusers #OpenSource #ReactJS #FastAPI #NVIDIA #WSL2`

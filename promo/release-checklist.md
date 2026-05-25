@@ -18,6 +18,7 @@
 - [ ] Pin one known-working settings block in the README.
 - [ ] Confirm no local model paths, secrets, or paid component references are committed.
 - [ ] Record one short demo clip from the local UI.
+- [ ] Record or link one short WSL2 SANA-WM probe clip if mentioning SANA-WM.
 
 ## Good First Issues
 
@@ -25,7 +26,7 @@
 - Add a setup smoke test command.
 - Add a ComfyUI handoff/export option.
 - Add more model profile examples.
-- Add a future SANA-WM / VM adapter when real weights and APIs are available.
+- Add a SANA-WM UI adapter around the official NVLabs script.
 - Add README screenshots and a short demo GIF.
 
 ## First Outreach Targets
@@ -40,6 +41,6 @@
 ## What Not To Claim
 
 - Do not say this includes NVIDIA weights.
-- Do not say SANA-WM / VM is supported until it is actually downloadable and tested.
+- Do not say SANA-WM is integrated into the UI yet. It is currently an experimental WSL2 CLI probe.
 - Do not promise long clips in a single model pass. The app uses chained short segments.
 - Do not imply 12 GB VRAM is comfortable for all settings. Start low and scale.
