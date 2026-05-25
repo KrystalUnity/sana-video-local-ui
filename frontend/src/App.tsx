@@ -80,6 +80,11 @@ type FormState = {
   modelProfile: string;
   memoryMode: "low" | "balanced";
   unloadAfter: boolean;
+  wmCameraMode: "demo" | "action";
+  wmAction: string;
+  wmTranslationSpeed: number;
+  wmRotationSpeed: number;
+  wmActionOverlay: boolean;
 };
 
 const defaultForm: FormState = {
@@ -97,6 +102,11 @@ const defaultForm: FormState = {
   modelProfile: "sana-video-2b-480p",
   memoryMode: "low",
   unloadAfter: true,
+  wmCameraMode: "demo",
+  wmAction: "w-48",
+  wmTranslationSpeed: 0.05,
+  wmRotationSpeed: 3,
+  wmActionOverlay: true,
 };
 
 const sectionTips = {
@@ -118,6 +128,11 @@ const controlTips = {
   model: "Pick the local model profile to run. Unsupported profiles need an adapter before they can generate.",
   memory: "Low VRAM unloads and clears more aggressively. Balanced keeps more resident for speed.",
   unload: "Frees model memory after each run, useful on a 12 GB laptop GPU.",
+  wmCameraMode: "Demo camera uses the official SANA-WM trajectory. Action mode rolls a WASD/IJKL camera path from text.",
+  wmAction: "Action DSL such as w-16, wa-12, none-8. WASD translates; IJKL rotates the view.",
+  wmTranslation: "Per-frame movement amount for WASD action mode.",
+  wmRotation: "Per-frame rotation degrees for IJKL action mode.",
+  wmOverlay: "Draws the official action/camera overlay onto the SANA-WM output.",
 };
 
 function toAssetUrl(url: string | null) {
@@ -156,6 +171,7 @@ export default function App() {
     () => modelProfiles.find((profile) => profile.id === form.modelProfile) ?? modelProfiles[0] ?? null,
     [form.modelProfile, modelProfiles],
   );
+  const isSanaWm = selectedModel?.pipelineFamily === "sana-wm-wsl2-probe";
   const selectedModelReady = !selectedModel || (selectedModel.exists && selectedModel.supported);
   const canGenerate = Boolean(form.prompt.trim()) && selectedModelReady && !isSubmitting && job?.status !== "running" && job?.status !== "queued";
   const activeOutputUrl = selectedOutput ?? toAssetUrl(job?.outputUrl ?? null) ?? toAssetUrl(outputs[0]?.url ?? null);
@@ -169,14 +185,25 @@ export default function App() {
       ? "Model found"
       : "Model missing";
   const modelStatusGood = selectedModel ? selectedModel.exists && selectedModel.supported : Boolean(health?.modelExists);
-  const projectedFrames = form.frames + Math.max(form.segments - 1, 0) * Math.max(form.frames - 1, 1);
+  const effectiveSegments = isSanaWm ? 1 : form.segments;
+  const projectedFrames = form.frames + Math.max(effectiveSegments - 1, 0) * Math.max(form.frames - 1, 1);
 
   const runProfile = useMemo(() => {
     const seconds = projectedFrames / form.fps;
-    const mode = form.segments > 1 ? (imageFile ? "Image chain" : "Text chain") : imageFile ? "Image seed" : "Text seed";
+    const mode = isSanaWm
+      ? form.wmCameraMode === "action"
+        ? "WM action"
+        : "WM demo camera"
+      : form.segments > 1
+        ? imageFile
+          ? "Image chain"
+          : "Text chain"
+        : imageFile
+          ? "Image seed"
+          : "Text seed";
     const model = selectedModel?.label ?? "Default model";
-    return `${model} / ${mode} / ${seconds.toFixed(2)}s / ${form.segments} segment${form.segments === 1 ? "" : "s"}`;
-  }, [form.fps, form.segments, imageFile, projectedFrames, selectedModel]);
+    return `${model} / ${mode} / ${seconds.toFixed(2)}s / ${effectiveSegments} segment${effectiveSegments === 1 ? "" : "s"}`;
+  }, [effectiveSegments, form.fps, form.segments, form.wmCameraMode, imageFile, isSanaWm, projectedFrames, selectedModel]);
 
   useEffect(() => {
     refreshHealth();
@@ -252,12 +279,17 @@ export default function App() {
     data.set("steps", String(form.steps));
     data.set("guidance", String(form.guidance));
     data.set("frames", String(form.frames));
-    data.set("segments", String(form.segments));
+    data.set("segments", String(effectiveSegments));
     data.set("seed", String(form.seed));
     data.set("fps", String(form.fps));
     data.set("model_profile", form.modelProfile);
     data.set("memory_mode", form.memoryMode);
     data.set("unload_after", String(form.unloadAfter));
+    data.set("wm_camera_mode", form.wmCameraMode);
+    data.set("wm_action", form.wmAction);
+    data.set("wm_translation_speed", String(form.wmTranslationSpeed));
+    data.set("wm_rotation_speed_deg", String(form.wmRotationSpeed));
+    data.set("wm_action_overlay", String(form.wmActionOverlay));
     if (imageFile) data.set("start_image", imageFile);
 
     try {
@@ -351,7 +383,7 @@ export default function App() {
           <Control label="Motion" tip={controlTips.motion} value={form.motionScore} min={1} max={100} step={1} onChange={(value) => update("motionScore", value)} />
           <Control label="Steps" tip={controlTips.steps} value={form.steps} min={4} max={30} step={1} onChange={(value) => update("steps", value)} />
           <Control label="Frames" tip={controlTips.frames} value={form.frames} min={9} max={49} step={8} onChange={(value) => update("frames", value)} />
-          <Control label="Segments" tip={controlTips.segments} value={form.segments} min={1} max={8} step={1} onChange={(value) => update("segments", value)} />
+          {!isSanaWm && <Control label="Segments" tip={controlTips.segments} value={form.segments} min={1} max={8} step={1} onChange={(value) => update("segments", value)} />}
           <Control label="Guidance" tip={controlTips.guidance} value={form.guidance} min={1} max={10} step={0.25} onChange={(value) => update("guidance", value)} />
           <Control label="FPS" tip={controlTips.fps} value={form.fps} min={8} max={24} step={1} onChange={(value) => update("fps", value)} />
 
@@ -390,6 +422,57 @@ export default function App() {
               </span>
               <small>{selectedModel.description}</small>
               <code>{selectedModel.path}</code>
+            </div>
+          )}
+
+          {isSanaWm && (
+            <div className="wm-panel">
+              <div className="wm-panel-title">
+                <Layers size={15} />
+                SANA-WM Camera
+              </div>
+
+              <label className="field-label">
+                <span className="field-title">
+                  Camera mode
+                  <Tooltip label={controlTips.wmCameraMode} />
+                </span>
+                <select value={form.wmCameraMode} onChange={(event) => update("wmCameraMode", event.target.value as FormState["wmCameraMode"])}>
+                  <option value="demo">Demo trajectory</option>
+                  <option value="action">WASD/IJKL action</option>
+                </select>
+              </label>
+
+              {form.wmCameraMode === "action" && (
+                <>
+                  <label className="field-label">
+                    <span className="field-title">
+                      Action
+                      <Tooltip label={controlTips.wmAction} />
+                    </span>
+                    <input
+                      type="text"
+                      value={form.wmAction}
+                      onChange={(event) => update("wmAction", event.target.value)}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <Control label="Move" tip={controlTips.wmTranslation} value={form.wmTranslationSpeed} min={0.01} max={0.2} step={0.01} onChange={(value) => update("wmTranslationSpeed", value)} />
+                  <Control label="Rotate" tip={controlTips.wmRotation} value={form.wmRotationSpeed} min={0.5} max={8} step={0.5} onChange={(value) => update("wmRotationSpeed", value)} />
+                </>
+              )}
+
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={form.wmActionOverlay}
+                  onChange={(event) => update("wmActionOverlay", event.target.checked)}
+                />
+                <span className="check-label">
+                  Action overlay
+                  <Tooltip label={controlTips.wmOverlay} />
+                </span>
+              </label>
             </div>
           )}
 
@@ -443,7 +526,7 @@ export default function App() {
           <div className="metric-grid">
             <Metric label="Step" value={job ? `${job.step}/${job.totalSteps}` : "-"} />
             <Metric label="Frames" value={job ? String(job.frames) : String(projectedFrames)} />
-            <Metric label="Segments" value={job ? String(job.segments) : String(form.segments)} />
+            <Metric label="Segments" value={job ? String(job.segments) : String(effectiveSegments)} />
             <Metric label="Peak VRAM" value={job?.peakAllocatedGb ? `${job.peakAllocatedGb} GB` : "-"} />
             <Metric label="Elapsed" value={job?.startedAt ? formatClock((job.finishedAt ?? Date.now() / 1000) - job.startedAt) : "-"} />
           </div>

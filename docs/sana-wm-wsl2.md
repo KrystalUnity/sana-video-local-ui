@@ -94,7 +94,8 @@ From Windows Explorer, WSL files are usually visible under:
 ## Current Limitations
 
 - The React UI has a minimal SANA-WM adapter for the same no-refiner WSL2 path.
-  It still uses the official demo camera and intrinsics.
+  It can use the official demo camera or a WASD/IJKL action string. Intrinsics
+  currently use the official demo values.
 - The SANA-WM full refiner is not part of the tiny probe.
 - Native Windows is not the recommended path because the official script relies
   on Linux-friendly Triton and attention packages.
@@ -102,17 +103,15 @@ From Windows Explorer, WSL files are usually visible under:
 
 ## Next Adapter Work
 
-A proper UI adapter should expose SANA-WM-specific inputs:
+The UI adapter now exposes:
 
 - start image
-- prompt file or text-to-temp-file wrapper
-- camera path or action string
-- intrinsics path
+- text-to-temp-file prompt handling
+- demo camera or action string
 - frame count
 - steps
 - guidance
-- no-refiner/refiner mode
-- VAE/refiner offload controls
+- action overlay toggle
+- movement and rotation speed for action mode
 
-The first UI adapter uses this same WSL2 probe lane. Camera/action controls are
-the next step for making it feel native inside the workbench.
+The next step is custom camera/intrinsics upload and optional full-refiner mode.

@@ -46,7 +46,8 @@ script with camera/action controls, prompt files, and Linux-friendly Triton
 dependencies. A tiny WSL2 stage-1/no-refiner probe is included in
 [`scripts/wsl/`](scripts/wsl/) and documented in
 [`docs/sana-wm-wsl2.md`](docs/sana-wm-wsl2.md). The UI adapter currently runs
-the tiny no-refiner WSL2 path with the official demo camera and intrinsics.
+the tiny no-refiner WSL2 path with either the official demo camera trajectory
+or a WASD/IJKL action string.
 
 Optional local model profiles can be defined in `model-profiles.local.json` at the repo root. This file is ignored by git so machine-specific paths do not leak into public commits:
 
@@ -141,7 +142,7 @@ For 12 GB laptop GPUs, start with:
 Scale up after a successful run.
 
 For SANA-WM, start with the WSL2 stage-1 probe before attempting longer clips
-or the full refiner stack.
+or the full refiner stack. The UI adapter runs one SANA-WM segment at a time.
 
 ## License Notes
 

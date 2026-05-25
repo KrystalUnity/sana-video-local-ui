@@ -147,7 +147,7 @@ def load_model_profiles() -> list[ModelProfile]:
             pipeline_family=SANA_WM_PIPELINE_FAMILY,
             description=(
                 "Experimental SANA-WM stage-1/no-refiner generation through WSL2. "
-                "Uses the official demo camera/intrinsics path."
+                "Supports the demo camera path or WASD/IJKL action mode with official intrinsics."
             ),
         ),
     ]
@@ -348,6 +348,11 @@ def run_sana_wm_generation(job_id: str, params: dict[str, Any], image_path: Path
     else:
         image_arg = f"{lab}/Sana/asset/sana_wm/demo_0.png"
 
+    camera_mode = str(params.get("wm_camera_mode") or "demo")
+    action = str(params.get("wm_action") or "").strip()
+    if camera_mode == "action" and not action:
+        action = f"w-{max(frames - 1, 1)}"
+
     set_job(job_id, progress=0.08, message="Starting SANA-WM in WSL2")
     command_parts = [
         "cd",
@@ -377,8 +382,6 @@ def run_sana_wm_generation(job_id: str, params: dict[str, Any], image_path: Path
         shlex.quote(f"{lab}/outputs"),
         "--name",
         shlex.quote(job_id),
-        "--camera",
-        "asset/sana_wm/demo_0_pose.npy",
         "--intrinsics",
         "asset/sana_wm/demo_0_intrinsics.npy",
         "--num_frames",
@@ -393,11 +396,30 @@ def run_sana_wm_generation(job_id: str, params: dict[str, Any], image_path: Path
         str(seed),
         "--no_refiner",
         "--offload_vae",
-        "&&",
-        "cp",
-        shlex.quote(wsl_output),
-        shlex.quote(windows_path_to_wsl(local_output)),
     ]
+    if camera_mode == "action":
+        command_parts.extend(
+            [
+                "--action",
+                shlex.quote(action),
+                "--translation_speed",
+                str(float(params.get("wm_translation_speed") or 0.05)),
+                "--rotation_speed_deg",
+                str(float(params.get("wm_rotation_speed_deg") or 3.0)),
+            ]
+        )
+    else:
+        command_parts.extend(["--camera", "asset/sana_wm/demo_0_pose.npy"])
+    if not bool(params.get("wm_action_overlay", True)):
+        command_parts.append("--no_action_overlay")
+    command_parts.extend(
+        [
+            "&&",
+            "cp",
+            shlex.quote(wsl_output),
+            shlex.quote(windows_path_to_wsl(local_output)),
+        ]
+    )
     command = " ".join(command_parts)
 
     set_job(job_id, progress=0.12, message="Running SANA-WM no-refiner probe")
@@ -599,6 +621,11 @@ async def create_job(
     model_profile: str = Form(DEFAULT_MODEL_ID),
     memory_mode: str = Form("low"),
     unload_after: bool = Form(True),
+    wm_camera_mode: str = Form("demo"),
+    wm_action: str = Form(""),
+    wm_translation_speed: float = Form(0.05),
+    wm_rotation_speed_deg: float = Form(3.0),
+    wm_action_overlay: bool = Form(True),
     start_image: UploadFile | None = File(None),
 ) -> dict[str, Any]:
     if memory_mode not in {"low", "balanced"}:
@@ -618,6 +645,10 @@ async def create_job(
             status_code=400,
             detail=f"Model profile '{profile.label}' uses unsupported pipeline family '{profile.pipeline_family}'",
         )
+    if profile.pipeline_family == SANA_WM_PIPELINE_FAMILY:
+        segments = 1
+        if wm_camera_mode not in {"demo", "action"}:
+            raise HTTPException(status_code=400, detail="wm_camera_mode must be demo or action")
 
     job_id = uuid.uuid4().hex[:12]
     image_path: Path | None = None
@@ -657,6 +688,11 @@ async def create_job(
         "model_profile": profile.id,
         "memory_mode": memory_mode,
         "unload_after": unload_after,
+        "wm_camera_mode": wm_camera_mode,
+        "wm_action": wm_action,
+        "wm_translation_speed": wm_translation_speed,
+        "wm_rotation_speed_deg": wm_rotation_speed_deg,
+        "wm_action_overlay": wm_action_overlay,
     }
     executor.submit(run_generation, job_id, params, image_path)
     return job.to_dict()

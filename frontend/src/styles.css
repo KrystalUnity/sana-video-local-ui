@@ -209,6 +209,7 @@ h1 {
 
 textarea,
 input[type="number"],
+input[type="text"],
 select {
   width: 100%;
   border: 1px solid #303a3d;
@@ -355,6 +356,33 @@ input[type="range"] {
   margin-top: 7px;
   min-height: 38px;
   padding: 0 10px;
+}
+
+.wm-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid rgba(157, 219, 195, 0.28);
+  border-radius: 8px;
+  padding: 12px;
+  background: #0b1213;
+}
+
+.wm-panel .control {
+  margin-bottom: 4px;
+}
+
+.wm-panel .field-label {
+  margin-top: 0;
+}
+
+.wm-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #9ddbc3;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .model-note {
